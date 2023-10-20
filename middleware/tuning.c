@@ -16,16 +16,19 @@ static float T_zero_angle, T_zero_angle_measured;           //FF04
 static int T_sensor_direction, T_sensor_direction_measured; //FF04
 
 static int T_rotation_direction;                                    //FF06
-static float T_ang_margine, T_rpm_to_kmph, T_rpm_fault;             //FF06
+static float T_rpm_to_kmph, T_rpm_fault;             //FF06
 static float T_motor_derateC, T_motor_TfaultC, T_ESC_derateC, T_ESC_TfaultC; //FF07
 static float T_Vbat_max, T_Vbat_min, T_OV_fault, T_UV_fault;        //FF08
 static float T_Ibat_max, T_Ibat_regen, T_Iph_fault, T_Ibat_fault;    //FF08
 
-static int T_driving_mode;     //FF0B
-static float T_Leco_rpm, T_eco_rpm;            //FF0B
-static float T_throttle_zero, T_throttle_max;       //FF0C
-static float T_Vbrake_derate, T_immob_rpm, T_reverse_rpm;                               //FF0C
-static float T_kp_rpm, T_ki_rpm, T_kp_torque, T_ki_torque; //FF0D
+static int T_driving_mode;     //FF11
+static float T_L_rpm, T_M_rpm;            //FF11
+static float T_throttle_zero, T_throttle_max;       //FF12
+static float T_Vbrake_derate, T_k_auto_brake, T_reverse_rpm;                               
+static float T_kp_rpm, T_ki_rpm, T_L_acceleration, T_M_acceleration; //FF13
+static float T_L_Ibat, T_M_Ibat, T_L_Iph, T_M_Iph;            //FF14
+static int T_CAN_baud;
+
 
 void send_measured_angle(float theta, float theta0, float theta1, int sensor_direction_estimate)
 {
@@ -34,7 +37,7 @@ void send_measured_angle(float theta, float theta0, float theta1, int sensor_dir
     send_currently_used_values(0x04);  
 }
 
-void tune_state_variables(float * Rph_adr, float * Ld_adr, float * Lq_adr, float * PHIph_adr, float * zero_angle_adr, int * sensor_direction_adr, float * ang_margine_adr, int * rotation_direction_adr)
+void tune_state_variables(float * Rph_adr, float * Ld_adr, float * Lq_adr, float * PHIph_adr, float * zero_angle_adr, int * sensor_direction_adr, int * rotation_direction_adr)
 {
     volatile uint32_t temp32;
     volatile float tempf;
@@ -54,7 +57,6 @@ void tune_state_variables(float * Rph_adr, float * Ld_adr, float * Lq_adr, float
     T_sensor_direction = *sensor_direction_adr;
     
     T_rotation_direction = *rotation_direction_adr;
-    T_ang_margine = *ang_margine_adr;            
     
     
     //====================================================================================
@@ -99,12 +101,6 @@ void tune_state_variables(float * Rph_adr, float * Ld_adr, float * Lq_adr, float
         __builtin_memcpy((uint32_t *)&tempf, (uint32_t *)&temp32, 4);
         if(tempf > 0) T_rotation_direction = 1;
         else T_rotation_direction = 0;
-        
-        Eread_stat = EEPROM_WordRead(0x64, (uint32_t *)&temp32);
-        __builtin_memcpy((uint32_t *)&tempf, (uint32_t *)&temp32, 4);
-        T_ang_margine = fabs(tempf);
-        if(T_ang_margine < 5) T_ang_margine = 5;
-        if(T_ang_margine > 50) T_ang_margine = 50;
     }
     
     //===============================================================================
@@ -115,7 +111,6 @@ void tune_state_variables(float * Rph_adr, float * Ld_adr, float * Lq_adr, float
     *Lq_adr = T_Lq;
     *PHIph_adr = T_PHIph;
     
-    *ang_margine_adr = T_ang_margine;
     *zero_angle_adr = T_zero_angle;
     
     *sensor_direction_adr = T_sensor_direction;
@@ -189,7 +184,7 @@ void tune_faults(float *rpm_fault_adr, float * OV_fault_adr, float * UV_fault_ad
     *motor_TfaultC_adr = T_motor_TfaultC; 
 }
 
-void tune_powertrain_variables(int *poles_adr, float * Iph_max_adr, float * rpm_max_adr, float *rpm_to_kmph_adr,  float * motor_derateC_adr, float * ESC_derateC_adr, float * Vbat_max_adr, float * Vbat_min_adr, float * Ibat_max_adr, float * Ibat_regen_adr)
+void tune_powertrain_variables(int *poles_adr, float * Iph_max_adr, float * rpm_max_adr, float *rpm_to_kmph_adr,  float * motor_derateC_adr, float * ESC_derateC_adr, float * Vbat_max_adr, float * Vbat_min_adr, float * Ibat_max_adr, float * Ibat_regen_adr, int * CAN_baud_adr)
 {
     volatile uint32_t temp32;
     volatile float tempf;
@@ -207,8 +202,8 @@ void tune_powertrain_variables(int *poles_adr, float * Iph_max_adr, float * rpm_
     T_Vbat_min = *Vbat_min_adr;
     T_Ibat_max = *Ibat_max_adr;
     T_Ibat_regen = *Ibat_regen_adr;
+    T_CAN_baud = *CAN_baud_adr;    
     
-        
     if(ESCid > 0)
     {
         //1==========================================================================
@@ -226,6 +221,12 @@ void tune_powertrain_variables(int *poles_adr, float * Iph_max_adr, float * rpm_
         T_poles = (int)(fabs(tempf));
         
         //6==========================================================================
+        
+        Eread_stat = EEPROM_WordRead(0x64, (uint32_t *)&temp32);
+        __builtin_memcpy((uint32_t *)&tempf, (uint32_t *)&temp32, 4);
+        if(tempf < 325) T_CAN_baud = 250;
+        else T_CAN_baud = 500;
+        
         Eread_stat = EEPROM_WordRead(0x68, (uint32_t *)&temp32);
         __builtin_memcpy((uint32_t *)&tempf, (uint32_t *)&temp32, 4);
         T_rpm_to_kmph = fabs(tempf);
@@ -269,9 +270,10 @@ void tune_powertrain_variables(int *poles_adr, float * Iph_max_adr, float * rpm_
     *Vbat_min_adr = T_Vbat_min;
     *Ibat_max_adr = T_Ibat_max;
     *Ibat_regen_adr = T_Ibat_regen;
+    *CAN_baud_adr = T_CAN_baud; 
 }
 
-void tune_vehicle_veriables(int * driving_mode_adr, float * immob_rpm_adr, float * Leco_rpm_adr, float * eco_rpm_adr, float * throttle_zero_adr, float * throttle_max_adr, float * Vbrake_derate_adr, float * reverse_rpm_adr, float * kp_rpm_adr, float * ki_rpm_adr, float * kp_torque_adr, float * ki_torque_adr)
+void tune_vehicle_veriables(int * driving_mode_adr, float * reverse_rpm_adr, float * L_rpm_adr, float * M_rpm_adr, float * throttle_zero_adr, float * throttle_max_adr, float * Vbrake_derate_adr, float * k_auto_brake_adr,  float * kp_rpm_adr, float * ki_rpm_adr, float * L_acceleration_adr, float * M_acceleration_adr, float * L_Ibat_adr, float * M_Ibat_adr, float * L_Iph_adr, float * M_Iph_adr)
 {
     volatile uint32_t temp32;
     volatile float tempf;
@@ -279,82 +281,88 @@ void tune_vehicle_veriables(int * driving_mode_adr, float * immob_rpm_adr, float
     
     Eread_stat = Eread_stat;
     
-    T_driving_mode = *driving_mode_adr; 
-    T_immob_rpm = *immob_rpm_adr;
-    T_Leco_rpm = *Leco_rpm_adr;
-    T_eco_rpm = *eco_rpm_adr;
+    T_driving_mode = *driving_mode_adr;    
+    T_reverse_rpm = *reverse_rpm_adr;
+    
+    T_L_rpm = *L_rpm_adr;
+    T_M_rpm = *M_rpm_adr;
     
     T_throttle_zero = *throttle_zero_adr;
     T_throttle_max = *throttle_max_adr;
     
     T_Vbrake_derate = *Vbrake_derate_adr;
-    T_reverse_rpm = *reverse_rpm_adr;
+    T_k_auto_brake = *k_auto_brake_adr;
     
     T_kp_rpm = *kp_rpm_adr;
     T_ki_rpm = *ki_rpm_adr;
-    T_kp_torque = *kp_torque_adr;
-    T_ki_torque = *ki_torque_adr;
+    T_L_acceleration = *L_acceleration_adr;
+    T_M_acceleration = *M_acceleration_adr;
     
+    T_L_Ibat = *L_Ibat_adr;
+    T_M_Ibat = *M_Ibat_adr;
+    
+    T_L_Iph = *L_Iph_adr;
+    T_M_Iph = *M_Iph_adr;   
        
     if(ESCid > 0)
     {
-        //00==========================================================================
-        Eread_stat = EEPROM_WordRead(0x00, (uint32_t *)&temp32);
+        //11==========================================================================
+        Eread_stat = EEPROM_WordRead(0x110, (uint32_t *)&temp32);
         __builtin_memcpy((uint32_t *)&tempf, (uint32_t *)&temp32, 4);
         T_driving_mode = (int)tempf;
         if(ESCid == 1000) T_driving_mode = 4; 
                
-        Eread_stat = EEPROM_WordRead(0x04, (uint32_t *)&temp32);
+        Eread_stat = EEPROM_WordRead(0x114, (uint32_t *)&temp32);
         __builtin_memcpy((uint32_t *)&tempf, (uint32_t *)&temp32, 4);
-        T_immob_rpm = fabs(tempf);
-        if(T_immob_rpm > 100) T_immob_rpm = 100;
+        T_reverse_rpm = fabs(tempf);
+        if(T_reverse_rpm > 100) T_reverse_rpm = 100;
         
-        Eread_stat = EEPROM_WordRead(0x08, (uint32_t *)&temp32);
+        Eread_stat = EEPROM_WordRead(0x118, (uint32_t *)&temp32);
         __builtin_memcpy((uint32_t *)&tempf, (uint32_t *)&temp32, 4);
-        T_Leco_rpm = fabs(tempf);
-        if(T_Leco_rpm > 100) T_Leco_rpm = 100;
+        T_L_rpm = fabs(tempf);
+        if(T_L_rpm > 100) T_L_rpm = 100;
         
-        Eread_stat = EEPROM_WordRead(0x0C, (uint32_t *)&temp32);
+        Eread_stat = EEPROM_WordRead(0x11C, (uint32_t *)&temp32);
         __builtin_memcpy((uint32_t *)&tempf, (uint32_t *)&temp32, 4);
-        T_eco_rpm = fabs(tempf);
-        if(T_eco_rpm > 100) T_eco_rpm = 100;
+        T_M_rpm = fabs(tempf);
+        if(T_M_rpm > 100) T_M_rpm = 100;
         
-        //03==========================================================================
+        //12==========================================================================
         
-        Eread_stat = EEPROM_WordRead(0x30, (uint32_t *)&temp32);
+        Eread_stat = EEPROM_WordRead(0x120, (uint32_t *)&temp32);
         __builtin_memcpy((uint32_t *)&tempf, (uint32_t *)&temp32, 4);
         T_throttle_zero = fabs(tempf);
         
         if(T_throttle_zero > THROTTLE_ZERO_HL) T_throttle_zero = THROTTLE_ZERO_HL;
         if(T_throttle_zero < THROTTLE_ZERO_LL) T_throttle_zero = THROTTLE_ZERO_LL;
         
-        Eread_stat = EEPROM_WordRead(0x34, (uint32_t *)&temp32);
+        Eread_stat = EEPROM_WordRead(0x124, (uint32_t *)&temp32);
         __builtin_memcpy((uint32_t *)&tempf, (uint32_t *)&temp32, 4);
         T_throttle_max = fabs(tempf); 
         
         if(T_throttle_max > THROTTLE_MAX_HL) T_throttle_max = THROTTLE_MAX_HL;
         if(T_throttle_max < THROTTLE_MAX_LL) T_throttle_max = THROTTLE_MAX_LL;
             
-        Eread_stat = EEPROM_WordRead(0x38, (uint32_t *)&temp32);
+        Eread_stat = EEPROM_WordRead(0x128, (uint32_t *)&temp32);
         __builtin_memcpy((uint32_t *)&tempf, (uint32_t *)&temp32, 4);
         T_Vbrake_derate = fabs(tempf);
         if(T_Vbrake_derate > 80) T_Vbrake_derate = 80;
         
-        Eread_stat = EEPROM_WordRead(0x3C, (uint32_t *)&temp32);
+        Eread_stat = EEPROM_WordRead(0x12C, (uint32_t *)&temp32);
         __builtin_memcpy((uint32_t *)&tempf, (uint32_t *)&temp32, 4);
-        T_reverse_rpm = fabs(tempf);
-        if(T_reverse_rpm > 100) T_reverse_rpm = 100;
+        T_k_auto_brake = fabs(tempf)/100.0;
+        if(T_k_auto_brake > 1.0) T_k_auto_brake = 1.0;
         
         
-        //05==========================================================================
-        Eread_stat = EEPROM_WordRead(0x50, (uint32_t *)&temp32);
+        //13==========================================================================
+        Eread_stat = EEPROM_WordRead(0x130, (uint32_t *)&temp32);
         __builtin_memcpy((uint32_t *)&tempf, (uint32_t *)&temp32, 4);
         T_kp_rpm = tempf;   
         
         if(T_kp_rpm < KP_RPM_MIN) T_kp_rpm = KP_RPM_MIN;
         if(T_kp_rpm > KP_RPM_MAX) T_kp_rpm = KP_RPM_MAX;
         
-        Eread_stat = EEPROM_WordRead(0x54, (uint32_t *)&temp32);
+        Eread_stat = EEPROM_WordRead(0x134, (uint32_t *)&temp32);
         __builtin_memcpy((uint32_t *)&tempf, (uint32_t *)&temp32, 4);
         T_ki_rpm = tempf;
                    
@@ -362,35 +370,64 @@ void tune_vehicle_veriables(int * driving_mode_adr, float * immob_rpm_adr, float
         if(T_ki_rpm > KI_RPM_MAX) T_ki_rpm = KI_RPM_MAX;
     
         
-        /*Eread_stat = EEPROM_WordRead(0x58, (uint32_t *)&temp32);
+        Eread_stat = EEPROM_WordRead(0x138, (uint32_t *)&temp32);
         __builtin_memcpy((uint32_t *)&tempf, (uint32_t *)&temp32, 4);
-        T_kp_torque = tempf;        
+        T_L_acceleration = fabs(tempf);
+        if(T_L_acceleration > 100.0) T_L_acceleration = 100.0;
         
-        Eread_stat = EEPROM_WordRead(0x5C, (uint32_t *)&temp32);
+        Eread_stat = EEPROM_WordRead(0x13C, (uint32_t *)&temp32);
         __builtin_memcpy((uint32_t *)&tempf, (uint32_t *)&temp32, 4);
-        T_ki_torque = tempf;    */            
+        T_M_acceleration = fabs(tempf);
+        if(T_M_acceleration > 100.0) T_M_acceleration = 100.0;
+        
+        //14==========================================================================
+        Eread_stat = EEPROM_WordRead(0x140, (uint32_t *)&temp32);
+        __builtin_memcpy((uint32_t *)&tempf, (uint32_t *)&temp32, 4);
+        T_L_Ibat = fabs(tempf);
+        if(T_L_Ibat > 100.0) T_L_Ibat = 100.0;         
+        
+        Eread_stat = EEPROM_WordRead(0x144, (uint32_t *)&temp32);
+        __builtin_memcpy((uint32_t *)&tempf, (uint32_t *)&temp32, 4);
+        T_M_Ibat = fabs(tempf);
+        if(T_M_Ibat > 100.0) T_M_Ibat = 100.0; 
+        
+        Eread_stat = EEPROM_WordRead(0x148, (uint32_t *)&temp32);
+        __builtin_memcpy((uint32_t *)&tempf, (uint32_t *)&temp32, 4);
+        T_L_Iph = fabs(tempf);
+        if(T_L_Iph > 100.0) T_L_Iph = 100.0;
+        
+        Eread_stat = EEPROM_WordRead(0x14C, (uint32_t *)&temp32);
+        __builtin_memcpy((uint32_t *)&tempf, (uint32_t *)&temp32, 4);
+        T_M_Iph = fabs(tempf);
+        if(T_M_Iph > 100.0) T_M_Iph = 100.0;
     }
-    
     
     //===============================================================================
     //Return tuning if ESCid > 0 from EEPROM otherwise as it is (default values)
         
     *driving_mode_adr = T_driving_mode;
-    *immob_rpm_adr = T_immob_rpm;
+    *reverse_rpm_adr = T_reverse_rpm;
     
-    *Leco_rpm_adr = T_Leco_rpm;
-    *eco_rpm_adr = T_eco_rpm;
+    *L_rpm_adr = T_L_rpm;
+    *M_rpm_adr = T_M_rpm;
+    
     
     *throttle_zero_adr = T_throttle_zero;
     *throttle_max_adr = T_throttle_max;
-    
     *Vbrake_derate_adr = T_Vbrake_derate;
-    *reverse_rpm_adr = T_reverse_rpm;
+    *k_auto_brake_adr = T_k_auto_brake; 
     
     *kp_rpm_adr = T_kp_rpm;
     *ki_rpm_adr = T_ki_rpm;
-    *kp_torque_adr = T_kp_torque;
-    *ki_torque_adr = T_ki_torque;   
+    *L_acceleration_adr = T_L_acceleration;
+    *M_acceleration_adr = T_M_acceleration;
+    
+    *L_Ibat_adr = T_L_Ibat;
+    *M_Ibat_adr = T_M_Ibat;
+    
+    *L_Iph_adr = T_L_Iph;
+    *M_Iph_adr = T_M_Iph; 
+    
 }
 
 void send_currently_used_values(uint8_t adr_HB)
@@ -437,22 +474,6 @@ void send_currently_used_values(uint8_t adr_HB)
         __builtin_memcpy((uint8_t *)(send_tuning_data + 14), &tempf, 4);
     }    
 
-    
-    /*else if(adr_HB == 03)
-    {
-        tempf = T_desired_drive_mode;
-        __builtin_memcpy((uint8_t *)(send_tuning_data + 2), &tempf, 4);
-
-        tempf = T_dir_rot;
-        __builtin_memcpy((uint8_t *)(send_tuning_data + 6), &tempf, 4);
-
-        tempf = T_zero_angle;
-        __builtin_memcpy((uint8_t *)(send_tuning_data + 10), &tempf, 4);
-
-        tempf = T_dirMR;      
-        __builtin_memcpy((uint8_t *)(send_tuning_data + 14), &tempf, 4);
-    }*/ 
-    
     else if(adr_HB == 0x04)
     {
         tempf = T_zero_angle;    
@@ -473,7 +494,7 @@ void send_currently_used_values(uint8_t adr_HB)
         tempf = T_rotation_direction;    
         __builtin_memcpy((uint8_t *)(send_tuning_data + 2), &tempf, 4);
 
-        tempf = T_ang_margine;
+        tempf = T_CAN_baud;
         __builtin_memcpy((uint8_t *)(send_tuning_data + 6), &tempf, 4);
 
         tempf = T_rpm_to_kmph;
@@ -528,22 +549,22 @@ void send_currently_used_values(uint8_t adr_HB)
         __builtin_memcpy((uint8_t *)(send_tuning_data + 14), &tempf, 4);
     }
     
-    else if(adr_HB == 0x00)
+    else if(adr_HB == 0x11)
     {
         tempf = T_driving_mode;    
         __builtin_memcpy((uint8_t *)(send_tuning_data + 2), &tempf, 4);
 
-        tempf = T_immob_rpm;   
+        tempf = T_reverse_rpm;   
         __builtin_memcpy((uint8_t *)(send_tuning_data + 6), &tempf, 4);
 
-        tempf = T_Leco_rpm;   
+        tempf = T_L_rpm;   
         __builtin_memcpy((uint8_t *)(send_tuning_data + 10), &tempf, 4);
 
-        tempf = T_eco_rpm;      
+        tempf = T_M_rpm;      
         __builtin_memcpy((uint8_t *)(send_tuning_data + 14), &tempf, 4);
     }  
     
-    else if(adr_HB == 0x03)
+    else if(adr_HB == 0x12)
     {
         tempf = T_throttle_zero;    
         __builtin_memcpy((uint8_t *)(send_tuning_data + 2), &tempf, 4);
@@ -554,11 +575,11 @@ void send_currently_used_values(uint8_t adr_HB)
         tempf = T_Vbrake_derate;   
         __builtin_memcpy((uint8_t *)(send_tuning_data + 10), &tempf, 4);
 
-        tempf = T_reverse_rpm;      
+        tempf = T_k_auto_brake*100.0;      
         __builtin_memcpy((uint8_t *)(send_tuning_data + 14), &tempf, 4);
     }
     
-    else if(adr_HB == 0x05)
+    else if(adr_HB == 0x13)
     {
         tempf = T_kp_rpm;    
         __builtin_memcpy((uint8_t *)(send_tuning_data + 2), &tempf, 4);
@@ -566,12 +587,27 @@ void send_currently_used_values(uint8_t adr_HB)
         tempf = T_ki_rpm;   
         __builtin_memcpy((uint8_t *)(send_tuning_data + 6), &tempf, 4);
 
-        tempf = 0;//T_BrakeEN;   
+        tempf = T_L_acceleration;   
         __builtin_memcpy((uint8_t *)(send_tuning_data + 10), &tempf, 4);
 
-        tempf = 0;//T_;      
+        tempf = T_M_acceleration;      
         __builtin_memcpy((uint8_t *)(send_tuning_data + 14), &tempf, 4);
-    }     
+    } 
+
+    else if(adr_HB == 0x14)
+    {
+        tempf = T_L_Ibat;    
+        __builtin_memcpy((uint8_t *)(send_tuning_data + 2), &tempf, 4);
+
+        tempf = T_M_Ibat;   
+        __builtin_memcpy((uint8_t *)(send_tuning_data + 6), &tempf, 4);
+
+        tempf = T_L_Iph;   
+        __builtin_memcpy((uint8_t *)(send_tuning_data + 10), &tempf, 4);
+
+        tempf = T_M_Iph;      
+        __builtin_memcpy((uint8_t *)(send_tuning_data + 14), &tempf, 4);
+    }      
     
     else
     {
@@ -699,33 +735,6 @@ void fill_empty_EEPROM(void)
         Ewrite_stat = EEPROM_WordWrite(EEadr, v4);
         EECONCLR = _EECON_WREN_MASK;  
         
-        //3======================================================================
-        /*EEadr = 3;
-        EEadr = EEadr << 4;                 //address is high byte as each adress should have 16 bytes for 4 floats
-
-        tempf = 1;    //calib                     
-        __builtin_memcpy((uint8_t *)&v1, &tempf, 4);
-        Ewrite_stat = EEPROM_WordWrite(EEadr, v1);
-        EEadr = EEadr + 0x04;
-        EECONCLR = _EECON_WREN_MASK; 
-
-        tempf = 0;     //calib
-        __builtin_memcpy((uint8_t *)&v2, &tempf, 4);
-        Ewrite_stat = EEPROM_WordWrite(EEadr, v2);
-        EEadr = EEadr + 0x04;
-        EECONCLR = _EECON_WREN_MASK; 
-
-        tempf = 310;     //calib
-        __builtin_memcpy((uint8_t *)&v3, &tempf, 4);
-        Ewrite_stat = EEPROM_WordWrite(EEadr, v3);
-        EEadr = EEadr + 0x04;
-        EECONCLR = _EECON_WREN_MASK; 
-        
-        tempf = 0;    //calib
-        __builtin_memcpy((uint8_t *)&v4, &tempf, 4);
-        Ewrite_stat = EEPROM_WordWrite(EEadr, v4);
-        EECONCLR = _EECON_WREN_MASK; */
-        
         //4======================================================================
         EEadr = 4;
         EEadr = EEadr << 4;                 //address is high byte as each address should have 16 bytes for 4 floats
@@ -764,7 +773,7 @@ void fill_empty_EEPROM(void)
         EEadr = EEadr + 0x04;
         EECONCLR = _EECON_WREN_MASK; 
 
-        tempf = ANG_MARGINE;     
+        tempf = CANBAUD;     
         __builtin_memcpy((uint8_t *)&v2, &tempf, 4);
         Ewrite_stat = EEPROM_WordWrite(EEadr, v2);
         EEadr = EEadr + 0x04;
@@ -864,8 +873,8 @@ void fill_empty_EEPROM(void)
         Ewrite_stat = EEPROM_WordWrite(EEadr, v4);
         EECONCLR = _EECON_WREN_MASK; 
         
-        //B======================================================================
-        EEadr = 0x00;
+        //11======================================================================
+        EEadr = 0x11;
         EEadr = EEadr << 4;                 //address is high byte as each adress should have 16 bytes for 4 floats
 
         tempf = DRIVING_MODE;                       
@@ -874,25 +883,25 @@ void fill_empty_EEPROM(void)
         EEadr = EEadr + 0x04;
         EECONCLR = _EECON_WREN_MASK; 
 
-        tempf = IMMOB_RPM;     
+        tempf = REVERSE_RPM;     
         __builtin_memcpy((uint8_t *)&v2, &tempf, 4);
         Ewrite_stat = EEPROM_WordWrite(EEadr, v2);
         EEadr = EEadr + 0x04;
         EECONCLR = _EECON_WREN_MASK; 
 
-        tempf = LECO_RPM;     
+        tempf = L_RPM;     
         __builtin_memcpy((uint8_t *)&v3, &tempf, 4);
         Ewrite_stat = EEPROM_WordWrite(EEadr, v3);
         EEadr = EEadr + 0x04;
         EECONCLR = _EECON_WREN_MASK; 
         
-        tempf = ECO_RPM;     
+        tempf = M_RPM;     
         __builtin_memcpy((uint8_t *)&v4, &tempf, 4);
         Ewrite_stat = EEPROM_WordWrite(EEadr, v4);
         EECONCLR = _EECON_WREN_MASK; 
         
-        //C======================================================================
-        EEadr = 0x03;
+        //12======================================================================
+        EEadr = 0x12;
         EEadr = EEadr << 4;                 //address is high byte as each adress should have 16 bytes for 4 floats
 
         tempf = THROTTLE_ZERO;                       
@@ -913,13 +922,13 @@ void fill_empty_EEPROM(void)
         EEadr = EEadr + 0x04;
         EECONCLR = _EECON_WREN_MASK; 
         
-        tempf = REVERSE_RPM;     
+        tempf = K_AUTO_BRAKE*100.0;     
         __builtin_memcpy((uint8_t *)&v4, &tempf, 4);
         Ewrite_stat = EEPROM_WordWrite(EEadr, v4);
         EECONCLR = _EECON_WREN_MASK;
         
-        //D======================================================================
-        EEadr = 0x05;
+        //13======================================================================
+        EEadr = 0x13;
         EEadr = EEadr << 4;                 //address is high byte as each adress should have 16 bytes for 4 floats
 
         tempf = KP_RPM;                       
@@ -934,16 +943,42 @@ void fill_empty_EEPROM(void)
         EEadr = EEadr + 0x04;
         EECONCLR = _EECON_WREN_MASK; 
 
-        /*tempf = 0.1;     
+        tempf = L_ACCELERATION*100.0;     
         __builtin_memcpy((uint8_t *)&v3, &tempf, 4);
         Ewrite_stat = EEPROM_WordWrite(EEadr, v3);
         EEadr = EEadr + 0x04;
         EECONCLR = _EECON_WREN_MASK; 
         
-        tempf = 0.2;     
+        tempf = M_ACCELERATION*100.0;     
         __builtin_memcpy((uint8_t *)&v4, &tempf, 4);
         Ewrite_stat = EEPROM_WordWrite(EEadr, v4);
-        EECONCLR = _EECON_WREN_MASK; */
-    }
-            
+        EECONCLR = _EECON_WREN_MASK;
+    
+        //14======================================================================
+        EEadr = 0x14;
+        EEadr = EEadr << 4;                 //address is high byte as each adress should have 16 bytes for 4 floats
+
+        tempf = L_IBAT;                       
+        __builtin_memcpy((uint8_t *)&v1, &tempf, 4);
+        Ewrite_stat = EEPROM_WordWrite(EEadr, v1);
+        EEadr = EEadr + 0x04;
+        EECONCLR = _EECON_WREN_MASK; 
+
+        tempf = M_IBAT;     
+        __builtin_memcpy((uint8_t *)&v2, &tempf, 4);
+        Ewrite_stat = EEPROM_WordWrite(EEadr, v2);
+        EEadr = EEadr + 0x04;
+        EECONCLR = _EECON_WREN_MASK; 
+
+        tempf = L_IPH;     
+        __builtin_memcpy((uint8_t *)&v3, &tempf, 4);
+        Ewrite_stat = EEPROM_WordWrite(EEadr, v3);
+        EEadr = EEadr + 0x04;
+        EECONCLR = _EECON_WREN_MASK; 
+        
+        tempf = M_IPH;     
+        __builtin_memcpy((uint8_t *)&v4, &tempf, 4);
+        Ewrite_stat = EEPROM_WordWrite(EEadr, v4);
+        EECONCLR = _EECON_WREN_MASK;
+    }     
 }

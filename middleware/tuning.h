@@ -22,17 +22,17 @@ extern "C" {
     void tune_command(uint8_t *);           //decode the command received
     //address of command array coming from UART driver
     
-    void tune_state_variables(float *, float *, float *, float *, float *, int*,  float *, int *);
-    //void tune_state_variables(float * Rph_adr, float * Ld_adr, float * Lq_adr, float * PHIph_adr, float * zero_angle_adr, int * sensor_direction_adr, float * ang_margine_adr, int * rotation_direction_adr)
+    void tune_state_variables(float *, float *, float *, float *, float *, int*, int *);
+    //&Rph, &Ld, &Lq, &PHIph, &zero_angle, &sensor_direction, &rotation_direction
     
     void tune_faults(float *, float * , float * , float * , float * , float * , float * );
-    //void tune_faults(float * speed_fault_adr, float * OV_fault_adr, float * UV_fault_adr, float * Iph_fault_adr, float * Ibat_fault_adr, float * ESC_TfaultC_adr, float * motor_TfaultC_adr)
+    //&rpm_fault, &OV_fault, &UV_fault, &Iph_fault, &Ibat_fault, &ESC_TfaultC, &motor_TfaultC
     
-    void tune_powertrain_variables(int *, float *, float *, float *, float *, float *, float *, float *, float *, float *);
-    //void tune_powertrain_variables(int *poles_adr, float * Iph_max_adr, float * speed_max_adr, float * rpm_to_kmph_adr, float motor_derateC_adr, float ESC_derateC_adr, float Vbat_max_adr, float Vbat_min_adr, float Ibat_max_adr, float Ibat_regen_adr)
+    void tune_powertrain_variables(int *, float *, float *, float *, float *, float *, float *, float *, float *, float *, int *);
+    //&poles, &Iph_max, &rpm_max, &rpm_to_kmph, &motor_derateC, &ESC_derateC, &Vbat_max, &Vbat_min, &Ibat_max, &Ibat_regen, &CAN_baud
 
-    void tune_vehicle_veriables(int *, float *, float*, float *, float *, float *, float *, float *, float *, float *, float *, float *);
-    //void tune_vehicle_veriables(int * driving_mode_adr, float * immob_speed_adr, float * eco_current_adr, float * eco_speed_adr, float * throttle_zero_adr, float * throttle_max_adr, float brake_current_adr, float reverse_speed_adr, float * kp_speed_adr, float * ki_speed_adr, float * kp_torque_adr, float * ki_torque_adr )
+    void tune_vehicle_veriables(int *, float*, float *, float *, float *, float *, float *, float *, float *, float *, float *, float *, float *, float *, float *, float * );
+    //&driving_mode, &reverse_rpm, &L_rpm, &M_rpm, &throttle_zero, &throttle_max, &Vbrake_derate, &k_auto_brake, &kp_rpm, &ki_rpm, &L_acceleration, &M_acceleration, &L_Ibat, &M_Ibat, &L_Iph, &M_Iph
     
     void send_measured_angle(float, float, float, int); //special function to send detected angles after rotor position caliberation
     //Theta at 45, theta at 135, corrected theta at 45, corrected MR orientation
