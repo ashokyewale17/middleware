@@ -2,7 +2,7 @@
 #include stdlib.h
 
 int main() {
-  printf("\nmiddleware file")
+  printf("middleware file")
 
 returnn 0
 }
