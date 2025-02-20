@@ -4,5 +4,4 @@
 int main() {
   printf("middleware file")
 
-returnn 0
 }
